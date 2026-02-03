@@ -19,45 +19,141 @@ logger = logging.getLogger(__name__)
 
 class SectionMapping(BaseModel):
     """Validated mapping of section IDs to content."""
-    mappings: dict[str, str]
+    mappings: dict[str, Any]
 
 
 def create_section_mapping_prompt(
-    content: ExtractedContent, 
+    content: ExtractedContent,
     analysis: TemplateAnalysis
 ) -> str:
     """
-    Create the prompt for AI section mapping.
+    Create prompt for AI to convert flat or semi-structured source content
+    into deterministic, template-ready sections.
     """
+
     content_text = content_to_text_summary(content)
-    section_desc = get_section_descriptions(analysis)
-    
-    prompt = f"""You are a document content mapper. Your task is to assign source content to template sections based on semantic meaning.
 
-## STRICT RULES:
-1. DO NOT generate new text - only use text from the source
-2. DO NOT add anything not present in the source content
-3. Match content to sections by meaning (e.g., source "Abstract" -> template "Executive Summary")
-4. Combine multiple source paragraphs if they belong to the same section
-5. If no matching content exists for a section, use empty string ""
-6. Respond with ONLY valid JSON, no explanations
+    prompt = f"""
+You are a document structure parser, NOT a writer.
 
-## Source Content:
+Your task is to convert raw source content into a clean, structured JSON format
+that can be injected into a predefined company document template.
+
+You must preserve meaning exactly. Do NOT summarize, rewrite, or embellish.
+
+---
+
+## PRIMARY OBJECTIVE
+Convert the source content into an ordered list of Sections.
+Each Section MUST have:
+- a "title"
+- a "body" array of structured content blocks
+
+This output will be mapped directly into a document template.
+Accuracy and stability are more important than creativity.
+
+---
+
+## SOURCE CONTENT CHARACTERISTICS
+The source text may be:
+- completely flat
+- poorly formatted
+- missing headings
+- a wall of text
+- loosely structured prose
+
+You MUST infer structure carefully, conservatively, and consistently.
+
+---
+
+## SECTION INFERENCE RULES (VERY IMPORTANT)
+
+### 1. Section Titles
+Infer a section title ONLY when there is strong evidence:
+- a short standalone line
+- a clear topic shift
+- a repeated thematic phrase
+- a commonly expected document section (e.g. Introduction, Overview, Conclusion)
+
+If unsure, prefer SAFE, GENERIC titles such as:
+- "Introduction"
+- "Overview"
+- "Details"
+- "Additional Information"
+
+DO NOT invent overly specific or creative titles.
+
+---
+
+### 2. Body Content Types
+Each body item MUST be one of the following types:
+
+- "text"  
+  → Standard paragraph content.
+
+- "subheading"  
+  → Minor internal headings inside a section.
+  Use sparingly and only when the text clearly signals a subsection.
+
+- "bullet"  
+  → List items.
+  Convert content into bullets when:
+    - lines start with -, *, numbers, letters
+    - features, benefits, steps, or key points are listed
+    - multiple short, related statements appear sequentially
+
+---
+
+### 3. Paragraph Splitting
+- Break long paragraphs into multiple "text" blocks if they contain:
+  - multiple ideas
+  - topic transitions
+- Do NOT fragment sentences unnecessarily.
+
+---
+
+## STRICT RULES
+1. Preserve ALL original meaning and wording.
+2. DO NOT summarize or shorten content.
+3. DO NOT add new facts or interpretations.
+4. DO NOT repeat content across sections.
+5. Maintain original order of information.
+6. Output MUST be valid JSON.
+7. Output MUST match the required schema exactly.
+
+---
+
+## SOURCE CONTENT
 {content_text}
 
-## Template Sections:
-{section_desc}
+---
 
-## Required Output Format (JSON only):
-Return a JSON object where keys are section IDs and values are the mapped content:
-{{
-{chr(10).join(f'  "{sec.section_id}": "content for {sec.heading_text}",' for sec in analysis.sections[:-1])}
-  "{analysis.sections[-1].section_id}": "content for {analysis.sections[-1].heading_text}"
-}}
+## REQUIRED OUTPUT FORMAT (JSON ONLY)
 
-Map each section with the most semantically appropriate content from the source. Return ONLY the JSON object."""
+[
+  {{
+    "title": "Section Title",
+    "body": [
+      {{
+        "type": "text",
+        "content": "Paragraph text exactly as derived from source."
+      }},
+      {{
+        "type": "subheading",
+        "content": "Sub-section title"
+      }},
+      {{
+        "type": "bullet",
+        "content": "Bullet item text"
+      }}
+    ]
+  }}
+]
 
+Return ONLY the JSON array. No explanations. No markdown. No extra text.
+"""
     return prompt
+
 
 
 async def map_content_to_sections(
@@ -95,7 +191,7 @@ async def map_content_to_sections(
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a precise document content mapper. Return only valid JSON mapping section IDs to content."
+                        "content": "You are a document parser. Return only valid JSON array of sections with 'title' and 'body' fields."
                     },
                     {
                         "role": "user",
@@ -111,12 +207,21 @@ async def map_content_to_sections(
             logger.info(f"AI response received ({len(response_text)} chars)")
             logger.debug(f"AI response: {response_text[:500]}...")
             
-            # Parse JSON response
-            mapping_dict = _parse_ai_response(response_text)
+            # Parse JSON response - expecting array
+            sections_array = _parse_ai_response(response_text)
             
-            logger.info(f"Parsed mappings for sections: {list(mapping_dict.keys())}")
-            for sec_id, content_val in mapping_dict.items():
-                logger.info(f"  {sec_id}: {len(content_val)} chars - '{content_val[:50]}...'")
+            # Store as {"sections": [...]} for the renderer
+            if isinstance(sections_array, list):
+                mapping_dict = {"sections": sections_array}
+                logger.info(f"Parsed {len(sections_array)} sections from source")
+                for i, sec in enumerate(sections_array):
+                    title = sec.get("title", "")
+                    body = sec.get("body", "")
+                    logger.info(f"  Section {i+1}: '{title[:40]}' ({len(body)} chars)")
+            else:
+                # Fallback if AI returns dict instead of array
+                mapping_dict = sections_array
+                logger.warning("AI returned dict instead of array, using as-is")
             
             return SectionMapping(mappings=mapping_dict)
             
