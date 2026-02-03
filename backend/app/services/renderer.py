@@ -15,6 +15,72 @@ from app.services.analyzer import TemplateAnalysis
 logger = logging.getLogger(__name__)
 
 
+def clean_bullet_text(text: str) -> str:
+    """
+    Remove leading bullet markers from text to prevent duplicates.
+    Handles: -, *, •, numbered lists (1., 2.), lettered lists (a., b.)
+    """
+    # Strip leading whitespace first
+    text = text.strip()
+    # Remove common bullet/list markers at the start
+    patterns = [
+        r'^[-*•]\s*',           # Dash, asterisk, bullet
+        r'^\d+\.\s*',           # Numbered (1., 2., etc.)
+        r'^[a-zA-Z]\.\s*',      # Lettered (a., b., etc.)
+        r'^[a-zA-Z]\)\s*',      # Lettered with paren (a), b))
+    ]
+    for pattern in patterns:
+        text = re.sub(pattern, '', text)
+    return text.strip()
+
+
+def _update_safe_zone(doc, template_dna, section_titles: list[str]):
+    """
+    Update the safe zone (cover page, TOC) with new content information.
+    - Updates TOC entries with new section titles
+    - Optionally updates cover page title
+    """
+    safe_zone_end = template_dna.safe_zone_end_idx
+    
+    # Find TOC entries and replace them
+    toc_start = -1
+    toc_entries = []
+    
+    for idx in range(safe_zone_end):
+        para = doc.paragraphs[idx]
+        text = para.text.strip()
+        style_name = para.style.name.lower() if para.style else ""
+        
+        # Detect TOC heading
+        if "table of contents" in text.lower() or "toc" in style_name:
+            toc_start = idx
+            logger.info(f"  Found TOC heading at para {idx}")
+            continue
+        
+        # If we're past TOC heading, look for TOC entries (lines with dots/tabs)
+        if toc_start >= 0 and text:
+            # TOC entries typically have tabs or dotted leaders
+            if "\t" in para.text or "..." in text or re.match(r'^[\d.]+\s+\w+', text):
+                toc_entries.append(idx)
+    
+    logger.info(f"  Found {len(toc_entries)} potential TOC entries")
+    
+    # Replace TOC entries with new section titles
+    if toc_entries and section_titles:
+        for i, para_idx in enumerate(toc_entries):
+            if i < len(section_titles):
+                para = doc.paragraphs[para_idx]
+                new_title = section_titles[i]
+                # Clear and add new text with same formatting
+                for run in para.runs:
+                    run.text = ""
+                if para.runs:
+                    para.runs[0].text = f"{i+1}. {new_title}"
+                else:
+                    para.add_run(f"{i+1}. {new_title}")
+                logger.info(f"  Updated TOC entry {i+1}: '{new_title}'")
+
+
 def render_document(
     template_path: Path,
     output_path: Path,
@@ -89,6 +155,15 @@ def _render_docx_sections(
         
         logger.info(f"  Rebuilding with {len(sections_data)} source sections")
         
+        # Extract section titles for TOC update
+        section_titles = [sec.get("title", f"Section {i+1}") for i, sec in enumerate(sections_data)]
+        
+        # Step 0: Update safe zone (TOC) with new section titles
+        try:
+            _update_safe_zone(doc, template_dna, section_titles)
+        except Exception as e:
+            logger.warning(f"  Failed to update safe zone: {e}")
+        
         # Step 1: Delete all paragraphs after safe zone
         paragraphs_to_remove = list(range(template_dna.safe_zone_end_idx, len(doc.paragraphs)))
         logger.info(f"  Removing {len(paragraphs_to_remove)} old content paragraphs")
@@ -107,6 +182,73 @@ def _render_docx_sections(
             if isinstance(body, str):
                 body = [{"type": "text", "content": body}]
             
+            # DEBUG: Log what we received
+            logger.info(f"  BEFORE dedup: {len(body)} items")
+            for idx, item in enumerate(body):
+                logger.info(f"    Item {idx}: type={item.get('type', 'MISSING')}, content='{item.get('content', '')[:50]}'")
+            
+            # DEDUPLICATION: Remove items with duplicate content
+            # Strategy: If duplicates exist, prioritize "bullet" > "subheading" > "text"
+            
+            # 1. Group items by normalized content
+            content_groups = {}
+            for item in body:
+                content = item.get("content", "").strip()
+                if not content:
+                    continue
+                    
+                # Normalize (remove bullets, numbers, case)
+                normalized = re.sub(r'^[-*•\d.)\s]+', '', content).lower()
+                
+                if normalized not in content_groups:
+                    content_groups[normalized] = []
+                content_groups[normalized].append(item)
+            
+            logger.info(f"  Content groups: {len(content_groups)} unique items")
+            
+            # 2. Select best item for each unique content
+            deduplicated_body = []
+            
+            # We want to preserve order, so we iterate through original body
+            seen_normalized = set()
+            
+            for item in body:
+                content = item.get("content", "").strip()
+                normalized = re.sub(r'^[-*•\d.)\s]+', '', content).lower()
+                
+                if not normalized or normalized in seen_normalized:
+                    logger.info(f"  SKIP (already seen): '{content[:30]}'")
+                    continue
+                
+                # Get all versions of this content
+                candidates = content_groups.get(normalized, [])
+                
+                logger.info(f"  Processing '{normalized[:30]}': {len(candidates)} candidates")
+                for c in candidates:
+                    logger.info(f"    Candidate: type={c.get('type')}")
+                
+                # Pick the best one: Bullet > Subheading > Text
+                best_item = item # Default to current
+                
+                has_bullet = any(c.get("type") == "bullet" for c in candidates)
+                has_subheading = any(c.get("type") == "subheading" for c in candidates)
+                
+                if has_bullet:
+                    # Find the first bullet version
+                    best_item = next(c for c in candidates if c.get("type") == "bullet")
+                    logger.info(f"  KEEP bullet version")
+                elif has_subheading:
+                    # Find the first subheading version
+                    best_item = next(c for c in candidates if c.get("type") == "subheading")
+                    logger.info(f"  KEEP subheading version")
+                else:
+                    logger.info(f"  KEEP text version")
+                    
+                deduplicated_body.append(best_item)
+                seen_normalized.add(normalized)
+            
+            body = deduplicated_body
+            logger.info(f"  AFTER dedup: {len(body)} items")
             logger.info(f"  Adding section {i+1}: '{title[:40]}' ({len(body)} body items)")
             
             # Add heading with template style
@@ -161,14 +303,27 @@ def _render_docx_sections(
                         para.runs[0].font.bold = template_dna.subheading_font_bold
                         
                 elif item_type == "bullet":
-                    # Try to use bullet style, fall back to manual bullet formatting
+                    # Clean bullet text to remove any existing markers
+                    bullet_content = clean_bullet_text(content)
+                    
+                    # Check if bullet style exists BEFORE trying to use it
+                    has_bullet_style = False
                     try:
-                        para = doc.add_paragraph(content, style=template_dna.bullet_style_name)
+                        # Check if style exists without adding paragraph
+                        _ = doc.styles[template_dna.bullet_style_name]
+                        has_bullet_style = True
                     except:
+                        has_bullet_style = False
+                    
+                    if has_bullet_style:
+                        # Style exists, use it
+                        para = doc.add_paragraph(bullet_content, style=template_dna.bullet_style_name)
+                    else:
+                        # Style doesn't exist, use manual formatting
                         logger.warning(f"Bullet style '{template_dna.bullet_style_name}' not found, using manual formatting")
                         para = doc.add_paragraph(style=template_dna.body_style_name)
                         # Add bullet manually
-                        para.add_run("• " + content)
+                        para.add_run("• " + bullet_content)
                         # Indent for bullet
                         from docx.shared import Pt
                         para.paragraph_format.left_indent = Pt(18)
