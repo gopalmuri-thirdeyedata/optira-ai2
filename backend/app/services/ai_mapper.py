@@ -199,7 +199,7 @@ async def map_content_to_sections(
                     }
                 ],
                 temperature=0.1,
-                max_tokens=8192,
+                max_tokens=32768,
                 timeout=settings.groq_timeout
             )
             
