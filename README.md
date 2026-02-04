@@ -1,9 +1,3 @@
-# Optira AI - Intelligent Document Style Transfer
-
-Optira AI is a powerful document transformation engine that uses Artificial Intelligence to separate content from presentation. It allows users to take raw, unformatted text and automatically inject it into a stylized corporate template (`.docx`), preserving sophisticated formatting rules, updating the Table of Contents, and ensuring brand consistency.
-
-![Optira AI Banner](https://placehold.co/1000x300?text=Optira+AI+Document+Transformer)
-
 ## 🚀 Key Features
 
 - **AI-Powered Content Mapping**: Intelligently breaks down raw source text into logical sections (Introduction, Problem, Solution, etc.) using Large Language Models (LLM).
@@ -100,11 +94,6 @@ cp .env.example .env
 
 **Update `.env` with your keys:**
 ```ini
-# Choose Provider: 'groq' or 'gemini'
-AI_PROVIDER=gemini
-
-# Add your key
-GEMINI_API_KEY=your_gemini_key_here
 GROQ_API_KEY=your_groq_key_here
 ```
 
