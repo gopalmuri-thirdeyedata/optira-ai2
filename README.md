@@ -37,14 +37,14 @@ Optira AI is a powerful document transformation engine that uses Artificial Inte
 
 ```mermaid
 graph TD
-    User[User] -->|Uploads Source + Template| FE[Frontend (React)]
-    FE -->|POST /api/process| BE[Backend (FastAPI)]
+    User[User] -->|Uploads Source + Template| FE["Frontend (React)"]
+    FE -->|POST /api/process| BE["Backend (FastAPI)"]
     
     subgraph "Backend Processing"
         BE -->|Extract DNA| Analyzer[Template Analyzer]
         BE -->|Extract Text| Extractor[Content Extractor]
         
-        Extractor -->|Raw Content| AI[AI Mapper (Groq/Gemini)]
+        Extractor -->|Raw Content| AI["AI Mapper (Groq/Gemini)"]
         Analyzer -->|Section Structure| AI
         
         AI -->|JSON Mapping| Renderer[Document Renderer]
