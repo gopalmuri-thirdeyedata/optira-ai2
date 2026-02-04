@@ -34,15 +34,123 @@ def clean_bullet_text(text: str) -> str:
     return text.strip()
 
 
-def _update_safe_zone(doc, template_dna, section_titles: list[str]):
+def _detect_cover_title(doc, safe_zone_end):
+    """
+    Find the main title paragraph on the cover page using multiple heuristics.
+    
+    Returns:
+        tuple: (paragraph_index, paragraph_object) or (None, None) if not found
+    """
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    
+    candidates = []
+    
+    # Search first 10 paragraphs or safe zone, whichever is smaller
+    search_range = min(10, safe_zone_end)
+    
+    for idx in range(search_range):
+        para = doc.paragraphs[idx]
+        text = para.text.strip()
+        
+        # Skip empty or very short text
+        if not text or len(text) < 5:
+            continue
+            
+        score = 0
+        
+        # 1. Style-based detection (most reliable)
+        style_name = para.style.name.lower() if para.style else ""
+        if 'title' in style_name:
+            score += 100
+        if 'cover' in style_name:
+            score += 80
+        if 'heading' in style_name and '1' in style_name:
+            score += 50
+            
+        # 2. Formatting-based detection
+        if para.runs:
+            run = para.runs[0]
+            
+            # Font size (larger = more likely title)
+            if run.font.size:
+                font_pt = run.font.size.pt if hasattr(run.font.size, 'pt') else 0
+                if font_pt > 0:
+                    score += min(font_pt, 50)  # Cap at 50 points
+            
+            # Bold text
+            if run.font.bold:
+                score += 20
+                
+        # 3. Alignment (centered titles are common)
+        try:
+            if para.alignment == WD_ALIGN_PARAGRAPH.CENTER:
+                score += 15
+        except:
+            pass
+            
+        # 4. Position bonus (earlier = more likely)
+        score += (10 - idx) * 2
+        
+        # Skip very long text (likely not a title)
+        if len(text) > 150:
+            score -= 30
+            
+        candidates.append((score, idx, para, text))
+    
+    # Return highest scoring candidate
+    if candidates:
+        candidates.sort(reverse=True, key=lambda x: x[0])
+        score, idx, para, text = candidates[0]
+        
+        # Only return if score is reasonable
+        if score > 20:
+            logger.info(f"  Detected cover title at para {idx} (score={score}): '{text[:50]}'")
+            return idx, para
+    
+    logger.info("  No clear cover title detected")
+    return None, None
+
+
+def _update_safe_zone(doc, template_dna, section_titles: list[str], document_title: str = None):
     """
     Update the safe zone (cover page, TOC) with new content information.
-    - Updates TOC entries with new section titles
-    - Optionally updates cover page title
+    
+    Args:
+        doc: Document object
+        template_dna: Template metadata
+        section_titles: List of section/chapter titles from AI
+        document_title: Optional document title for cover page (defaults to first section if None)
     """
     safe_zone_end = template_dna.safe_zone_end_idx
     
-    # Find TOC entries and replace them
+    logger.info(f"  Updating safe zone (cover + TOC)...")
+    
+    # === STEP 1: Update Cover Page Title ===
+    if not document_title and section_titles:
+        # Use first section title as document title if not provided
+        document_title = section_titles[0]
+    
+    if document_title:
+        title_idx, title_para = _detect_cover_title(doc, safe_zone_end)
+        if title_para:
+            try:
+                # Preserve all formatting, just change the text content
+                old_title = title_para.text
+                if title_para.runs:
+                    # Update first run with new title
+                    title_para.runs[0].text = document_title
+                    # Clear subsequent runs to avoid leftover text
+                    for run in title_para.runs[1:]:
+                        run.text = ""
+                    logger.info(f"  ✓ Updated cover title: '{old_title[:30]}...' → '{document_title[:30]}'")
+                else:
+                    # Fallback: add run if none exist
+                    title_para.add_run(document_title)
+                    logger.info(f"  ✓ Set cover title: '{document_title}'")
+            except Exception as e:
+                logger.warning(f"  Failed to update cover title: {e}")
+    
+    # === STEP 2: Find TOC Entries ===
     toc_start = -1
     toc_entries = []
     
@@ -52,33 +160,100 @@ def _update_safe_zone(doc, template_dna, section_titles: list[str]):
         style_name = para.style.name.lower() if para.style else ""
         
         # Detect TOC heading
-        if "table of contents" in text.lower() or "toc" in style_name:
+        if "table of contents" in text.lower() or "contents" in text.lower():
             toc_start = idx
-            logger.info(f"  Found TOC heading at para {idx}")
+            logger.info(f"  Found TOC heading at para {idx}: '{text}'")
             continue
         
-        # If we're past TOC heading, look for TOC entries (lines with dots/tabs)
+        # Look for TOC-specific styles
+        if "toc" in style_name and idx > toc_start:
+            toc_entries.append(idx)
+            continue
+        
+        # If we've found TOC heading, look for entry patterns
         if toc_start >= 0 and text:
-            # TOC entries typically have tabs or dotted leaders
-            if "\t" in para.text or "..." in text or re.match(r'^[\d.]+\s+\w+', text):
+            # Pattern 1: Has tab character (common in TOCs)
+            has_tab = "\t" in para.text
+            
+            # Pattern 2: Has dotted leader
+            has_dots = "..." in text or "․․․" in text
+            
+            # Pattern 3: Starts with number (1., 1, etc.)
+            has_number = re.match(r'^\d+[\.\)]\s+\w+', text)
+            
+            # Pattern 4: Ends with number (page number)
+            ends_with_number = re.search(r'\d+\s*$', text)
+            
+            if has_tab or has_dots or has_number or ends_with_number:
                 toc_entries.append(idx)
     
-    logger.info(f"  Found {len(toc_entries)} potential TOC entries")
+    logger.info(f"  Found {len(toc_entries)} TOC entries")
     
-    # Replace TOC entries with new section titles
+    # === STEP 3: Update TOC Entries ===
     if toc_entries and section_titles:
+        updated_count = 0
         for i, para_idx in enumerate(toc_entries):
-            if i < len(section_titles):
-                para = doc.paragraphs[para_idx]
-                new_title = section_titles[i]
-                # Clear and add new text with same formatting
-                for run in para.runs:
-                    run.text = ""
+            if i >= len(section_titles):
+                # More TOC entries than sections - break
+                break
+                
+            para = doc.paragraphs[para_idx]
+            new_title = section_titles[i]
+            old_text = para.text
+            
+            try:
+                # Strategy: Replace title portion, keep formatting & trailing elements
+                # TOC format examples:
+                #   "1. Section Title ........ 5"
+                #   "Section Title\t5"
+                #   "1. Section Title"
+                
+                # Find where the title text ends (before dots, tabs, or trailing numbers)
+                text = para.text
+                
+                # Look for separators
+                dot_match = re.search(r'\.{2,}', text)  # Multiple dots
+                tab_idx = text.find('\t')
+                
+                # Determine where to split
+                split_idx = len(text)
+                if dot_match:
+                    split_idx = min(split_idx, dot_match.start())
+                if tab_idx > 0:
+                    split_idx = min(split_idx, tab_idx)
+                
+                # Preserve trailing part (dots, tabs, page numbers)
+                trailing_part = text[split_idx:] if split_idx < len(text) else ""
+                
+                # Build new TOC entry
+                # Remove old numbering if present
+                new_title_clean = re.sub(r'^\d+[\.\)]\s*', '', new_title)
+                new_text = f"{i+1}. {new_title_clean}{trailing_part}"
+                
+                # Update paragraph text while preserving formatting
                 if para.runs:
-                    para.runs[0].text = f"{i+1}. {new_title}"
+                    # Update first run
+                    para.runs[0].text = new_text
+                    # Clear other runs (except we want to preserve tab/page number runs)
+                    # Actually, safer to just update first run with full text
+                    for run in para.runs[1:]:
+                        run.text = ""
                 else:
-                    para.add_run(f"{i+1}. {new_title}")
-                logger.info(f"  Updated TOC entry {i+1}: '{new_title}'")
+                    para.add_run(new_text)
+                
+                logger.info(f"  ✓ TOC entry {i+1}: '{old_text[:40]}'  →  '{new_text[:40]}'")
+                updated_count += 1
+                
+            except Exception as e:
+                logger.warning(f"  Failed to update TOC entry {i+1}: {e}")
+        
+        logger.info(f"  Updated {updated_count}/{len(section_titles)} TOC entries")
+    else:
+        if not toc_entries:
+            logger.info(f"  ⚠ No TOC entries found to update")
+        elif not section_titles:
+            logger.info(f"  ⚠ No section titles to populate TOC")
+
 
 
 def render_document(
@@ -158,9 +333,12 @@ def _render_docx_sections(
         # Extract section titles for TOC update
         section_titles = [sec.get("title", f"Section {i+1}") for i, sec in enumerate(sections_data)]
         
-        # Step 0: Update safe zone (TOC) with new section titles
+        # Use first section title as document title for cover page
+        document_title = section_titles[0] if section_titles else "Document"
+        
+        # Step 0: Update safe zone (cover page title + TOC) with new section titles
         try:
-            _update_safe_zone(doc, template_dna, section_titles)
+            _update_safe_zone(doc, template_dna, section_titles, document_title)
         except Exception as e:
             logger.warning(f"  Failed to update safe zone: {e}")
         
@@ -182,11 +360,6 @@ def _render_docx_sections(
             if isinstance(body, str):
                 body = [{"type": "text", "content": body}]
             
-            # DEBUG: Log what we received
-            logger.info(f"  BEFORE dedup: {len(body)} items")
-            for idx, item in enumerate(body):
-                logger.info(f"    Item {idx}: type={item.get('type', 'MISSING')}, content='{item.get('content', '')[:50]}'")
-            
             # DEDUPLICATION: Remove items with duplicate content
             # Strategy: If duplicates exist, prioritize "bullet" > "subheading" > "text"
             
@@ -204,8 +377,6 @@ def _render_docx_sections(
                     content_groups[normalized] = []
                 content_groups[normalized].append(item)
             
-            logger.info(f"  Content groups: {len(content_groups)} unique items")
-            
             # 2. Select best item for each unique content
             deduplicated_body = []
             
@@ -217,15 +388,10 @@ def _render_docx_sections(
                 normalized = re.sub(r'^[-*•\d.)\s]+', '', content).lower()
                 
                 if not normalized or normalized in seen_normalized:
-                    logger.info(f"  SKIP (already seen): '{content[:30]}'")
                     continue
                 
                 # Get all versions of this content
                 candidates = content_groups.get(normalized, [])
-                
-                logger.info(f"  Processing '{normalized[:30]}': {len(candidates)} candidates")
-                for c in candidates:
-                    logger.info(f"    Candidate: type={c.get('type')}")
                 
                 # Pick the best one: Bullet > Subheading > Text
                 best_item = item # Default to current
@@ -236,19 +402,14 @@ def _render_docx_sections(
                 if has_bullet:
                     # Find the first bullet version
                     best_item = next(c for c in candidates if c.get("type") == "bullet")
-                    logger.info(f"  KEEP bullet version")
                 elif has_subheading:
                     # Find the first subheading version
                     best_item = next(c for c in candidates if c.get("type") == "subheading")
-                    logger.info(f"  KEEP subheading version")
-                else:
-                    logger.info(f"  KEEP text version")
                     
                 deduplicated_body.append(best_item)
                 seen_normalized.add(normalized)
             
             body = deduplicated_body
-            logger.info(f"  AFTER dedup: {len(body)} items")
             logger.info(f"  Adding section {i+1}: '{title[:40]}' ({len(body)} body items)")
             
             # Add heading with template style
