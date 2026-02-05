@@ -59,7 +59,7 @@ export function StatusIndicator({ currentStep, isComplete = false }: StatusIndic
                   ? "bg-primary text-primary-foreground"
                   : isActive
                   ? "bg-primary/20 text-primary border border-primary"
-                  : "bg-secondary text-muted-foreground"
+                  : "bg-muted text-muted-foreground"
               )}>
                 {isCompleted ? (
                   <Check className="w-3.5 h-3.5" />

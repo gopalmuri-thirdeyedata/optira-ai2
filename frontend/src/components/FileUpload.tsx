@@ -1,188 +1,108 @@
-import { useCallback, useState } from "react";
-import { FileText, Upload, X, FileType, Presentation } from "lucide-react";
+import React, { useCallback } from "react";
+import { useDropzone } from "react-dropzone";
+import { Upload, FileText, CheckCircle, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { validateFile, formatFileSize, getFileIcon } from "@/utils/validation";
-import { ALLOWED_EXTENSIONS } from "@/types";
 
 interface FileUploadProps {
-  /** Label displayed above the upload zone */
   label: string;
-  /** Description text for the upload zone */
   description: string;
-  /** Currently selected file */
   file: File | null;
-  /** Callback when file is selected or cleared */
   onFileChange: (file: File | null) => void;
-  /** Whether the upload is disabled */
   disabled?: boolean;
 }
 
-/**
- * File upload component with drag-and-drop support
- */
-export function FileUpload({
+export const FileUpload: React.FC<FileUploadProps> = ({
   label,
   description,
   file,
   onFileChange,
   disabled = false,
-}: FileUploadProps) {
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleFile = useCallback(
-    (selectedFile: File) => {
-      const validation = validateFile(selectedFile);
-      
-      if (!validation.valid) {
-        setError(validation.error || "Invalid file");
-        return;
+}) => {
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      if (acceptedFiles.length > 0) {
+        onFileChange(acceptedFiles[0]);
       }
-      
-      setError(null);
-      onFileChange(selectedFile);
     },
     [onFileChange]
   );
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      setIsDragOver(false);
-      
-      if (disabled) return;
-      
-      const droppedFile = e.dataTransfer.files[0];
-      if (droppedFile) {
-        handleFile(droppedFile);
-      }
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
+        ".docx",
+      ],
     },
-    [disabled, handleFile]
-  );
+    maxFiles: 1,
+    disabled,
+  });
 
-  const handleDragOver = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      if (!disabled) {
-        setIsDragOver(true);
-      }
-    },
-    [disabled]
-  );
-
-  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  }, []);
-
-  const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const selectedFile = e.target.files?.[0];
-      if (selectedFile) {
-        handleFile(selectedFile);
-      }
-    },
-    [handleFile]
-  );
-
-  const handleClear = useCallback(() => {
-    setError(null);
+  const removeFile = (e: React.MouseEvent) => {
+    e.stopPropagation();
     onFileChange(null);
-  }, [onFileChange]);
-
-  const FileIcon = file
-    ? getFileIcon(file.name) === "pdf"
-      ? FileType
-      : getFileIcon(file.name) === "ppt"
-      ? Presentation
-      : FileText
-    : Upload;
+  };
 
   return (
-    <div className="space-y-3">
-      <label className="block text-sm font-medium text-foreground">
-        {label}
-      </label>
-      
-      <div
-        className={cn(
-          "upload-zone cursor-pointer",
-          isDragOver && "drag-over",
-          file && "has-file",
-          disabled && "opacity-50 cursor-not-allowed"
-        )}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onClick={() => !disabled && document.getElementById(`file-input-${label}`)?.click()}
-      >
-        <input
-          id={`file-input-${label}`}
-          type="file"
-          accept={ALLOWED_EXTENSIONS.join(",")}
-          onChange={handleInputChange}
-          disabled={disabled}
-          className="hidden"
-        />
-        
-        {file ? (
-          <div className="flex items-center gap-4 w-full">
-            <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-              <FileIcon className="w-6 h-6 text-primary" />
-            </div>
-            
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">
-                {file.name}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {formatFileSize(file.size)}
-              </p>
-            </div>
-            
-            {!disabled && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleClear();
-                }}
-                className="flex-shrink-0 p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                aria-label="Remove file"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        ) : (
-          <>
-            <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center">
-              <Upload className="w-5 h-5 text-muted-foreground" />
-            </div>
-            
-            <div className="text-center">
-              <p className="text-sm text-foreground">
-                <span className="text-primary font-medium">Click to upload</span>
-                {" "}or drag and drop
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {description}
-              </p>
-            </div>
-            
-            <p className="text-xs text-muted-foreground">
-              PDF, DOCX, or PPTX (max 50MB)
-            </p>
-          </>
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-semibold text-foreground">{label}</label>
+        {file && (
+          <span className="text-xs text-secondary flex items-center gap-1">
+            <CheckCircle className="w-3 h-3" />
+            Ready
+          </span>
         )}
       </div>
       
-      {error && (
-        <p className="text-sm text-destructive flex items-center gap-2">
-          <span className="w-1 h-1 rounded-full bg-destructive" />
-          {error}
-        </p>
-      )}
+      <div
+        {...getRootProps()}
+        className={cn(
+          "relative group cursor-pointer transition-all duration-200 ease-in-out",
+          "border-2 border-dashed rounded-lg h-full min-h-[128px] flex flex-col items-center justify-center p-4",
+          "bg-muted/30 hover:bg-muted/60",
+          isDragActive ? "border-primary bg-primary/5" : "border-border",
+          file ? "border-primary/50 bg-primary/5" : "hover:border-primary/50",
+          disabled && "opacity-50 cursor-not-allowed hover:bg-muted/30 hover:border-border"
+        )}
+      >
+        <input {...getInputProps()} />
+        
+        {file ? (
+          <div className="w-full h-full flex items-center gap-3 animate-in fade-in zoom-in-95 duration-200">
+            <div className="h-10 w-10 rounded-lg bg-background flex items-center justify-center border border-border shrink-0 shadow-sm">
+              <FileText className="w-5 h-5 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0 text-left">
+              <p className="text-sm font-medium text-foreground truncate">
+                {file.name}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {(file.size / 1024 / 1024).toFixed(2)} MB
+              </p>
+            </div>
+            <button
+              onClick={removeFile}
+              className="p-1.5 rounded-full hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="text-center space-y-2">
+            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center mx-auto group-hover:scale-110 transition-transform duration-200">
+              <Upload className="w-4 h-4 text-primary" />
+            </div>
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium text-foreground">
+                <span className="text-primary hover:underline">Click to upload</span>
+                <span className="hidden sm:inline"> or drag and drop</span>
+              </p>
+              <p className="text-xs text-muted-foreground">{description}</p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
-}
+};

@@ -4,55 +4,57 @@
 
 @layer base {
   :root {
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
+    /* ThirdEye Data Branding Colors */
+    --background: 0 0% 100%; /* White */
+    --foreground: 210 23% 23%; /* Dark Slate */
 
-    --card: 222 47% 8%;
-    --card-foreground: 210 40% 98%;
+    --card: 0 0% 100%; /* White */
+    --card-foreground: 210 23% 23%;
 
-    --popover: 222 47% 8%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 23% 23%;
 
-    --primary: 190 95% 50%;
-    --primary-foreground: 222 47% 6%;
+    --primary: 98 53% 36%; /* ThirdEye Green #4D8C2B */
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 222 30% 14%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 200 77% 47%; /* ThirdEye Cyan #1B9AD6 */
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 222 30% 14%;
-    --muted-foreground: 215 20% 55%;
+    --muted: 210 20% 96%; /* Light Gray */
+    --muted-foreground: 215 16% 47%;
 
-    --accent: 190 95% 50%;
-    --accent-foreground: 222 47% 6%;
+    --accent: 200 77% 47%; /* Cyan */
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 222 30% 18%;
-    --input: 222 30% 18%;
-    --ring: 190 95% 50%;
+    --border: 214 20% 85%; /* Light Border */
+    --input: 214 20% 92%;
+    --ring: 98 53% 36%; /* Green Ring */
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;
 
     /* Custom tokens */
-    --gradient-primary: linear-gradient(135deg, hsl(190, 95%, 50%) 0%, hsl(210, 100%, 60%) 100%);
-    --gradient-surface: linear-gradient(135deg, hsl(222, 47%, 10%) 0%, hsl(222, 47%, 8%) 100%);
-    --glow-primary: 0 0 40px hsl(190 95% 50% / 0.3);
-    --glow-card: 0 8px 32px hsl(0 0% 0% / 0.4);
+    --gradient-primary: linear-gradient(135deg, #4D8C2B 0%, #5FA835 100%);
+    --gradient-secondary: linear-gradient(135deg, #1B9AD6 0%, #2BACEB 100%);
+    --glow-primary: 0 0 30px rgba(77, 140, 43, 0.15);
+    --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.06);
 
-    --sidebar-background: 222 47% 6%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 190 95% 50%;
-    --sidebar-primary-foreground: 222 47% 6%;
-    --sidebar-accent: 222 30% 14%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 222 30% 18%;
-    --sidebar-ring: 190 95% 50%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 210 23% 23%;
+    --sidebar-primary: 98 53% 36%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 20% 96%;
+    --sidebar-accent-foreground: 210 23% 23%;
+    --sidebar-border: 214 20% 85%;
+    --sidebar-ring: 98 53% 36%;
   }
 
   .dark {
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
+    /* Keep light theme by default - no dark mode override */
+    --background: 0 0% 100%;
+    --foreground: 210 23% 23%;
   }
 }
 
@@ -64,6 +66,11 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
+    background-image: 
+      linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    background-position: -1px -1px;
   }
 }
 
@@ -94,12 +101,13 @@
   }
 
   .glass-card {
-    @apply bg-card/80 backdrop-blur-xl border border-border/50;
-    box-shadow: var(--glow-card);
+    @apply bg-card border border-border;
+    box-shadow: var(--shadow-card);
   }
 
   .upload-zone {
     @apply relative flex flex-col items-center justify-center gap-4 p-8 rounded-lg border-2 border-dashed border-border transition-all duration-300;
+    background: hsl(var(--muted));
   }
 
   .upload-zone:hover,
@@ -109,7 +117,7 @@
   }
 
   .upload-zone.has-file {
-    @apply border-primary/50 bg-primary/5;
+    @apply border-primary/50 bg-primary/10;
   }
 
   .status-step {
@@ -117,7 +125,7 @@
   }
 
   .status-step.active {
-    @apply text-primary;
+    @apply text-primary font-semibold;
   }
 
   .status-step.completed {
