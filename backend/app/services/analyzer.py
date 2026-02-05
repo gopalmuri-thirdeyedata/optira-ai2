@@ -137,13 +137,17 @@ def _analyze_docx_sections(file_path: Path) -> TemplateAnalysis:
                 # Extract font properties from heading
                 if para.runs:
                     first_run = para.runs[0]
-                    heading_font_name = first_run.font.name
+                    heading_font_name = first_run.font.name or (para.style.font.name if para.style else None)
                     if first_run.font.size:
                         heading_font_size = int(first_run.font.size.pt)
-                    heading_font_bold = first_run.font.bold
-                    # Try to get color
+                    elif para.style and para.style.font.size:
+                        heading_font_size = int(para.style.font.size.pt)
+                        
+                    # Extract color (check run then style)
                     if first_run.font.color and first_run.font.color.rgb:
                         heading_font_color = str(first_run.font.color.rgb)
+                    elif para.style and para.style.font.color and para.style.font.color.rgb:
+                        heading_font_color = str(para.style.font.color.rgb)
                 
                 logger.info(f"  Found master heading at para {idx}:")
                 logger.info(f"    Style: '{style_name}'")

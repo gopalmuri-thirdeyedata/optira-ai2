@@ -34,6 +34,23 @@ def clean_bullet_text(text: str) -> str:
     return text.strip()
 
 
+def _apply_font_color(font, color_str: Optional[str]):
+    """Helper to apply hex color string to a font object."""
+    if not color_str:
+        return
+    try:
+        from docx.shared import RGBColor
+        # color_str is expected to be 'RRGGBB'
+        if len(color_str) == 6:
+            font.color.rgb = RGBColor(
+                int(color_str[0:2], 16),
+                int(color_str[2:4], 16),
+                int(color_str[4:6], 16)
+            )
+    except Exception as e:
+        logger.debug(f"Failed to apply font color {color_str}: {e}")
+
+
 def _detect_cover_title(doc, safe_zone_end):
     """
     Find the main title paragraph on the cover page using multiple heuristics.
@@ -45,8 +62,8 @@ def _detect_cover_title(doc, safe_zone_end):
     
     candidates = []
     
-    # Search first 10 paragraphs or safe zone, whichever is smaller
-    search_range = min(10, safe_zone_end)
+    # Search the entire safe zone for the cover title
+    search_range = safe_zone_end
     
     for idx in range(search_range):
         para = doc.paragraphs[idx]
@@ -143,9 +160,14 @@ def _update_safe_zone(doc, template_dna, section_titles: list[str], document_tit
                     for run in title_para.runs[1:]:
                         run.text = ""
                     logger.info(f"  ✓ Updated cover title: '{old_title[:30]}...' → '{document_title[:30]}'")
+                    # Apply heading color to cover title for consistency
+                    if template_dna.heading_font_color:
+                        _apply_font_color(title_para.runs[0].font, template_dna.heading_font_color)
                 else:
                     # Fallback: add run if none exist
-                    title_para.add_run(document_title)
+                    run = title_para.add_run(document_title)
+                    if template_dna.heading_font_color:
+                        _apply_font_color(run.font, template_dna.heading_font_color)
                     logger.info(f"  ✓ Set cover title: '{document_title}'")
             except Exception as e:
                 logger.warning(f"  Failed to update cover title: {e}")
@@ -421,16 +443,10 @@ def _render_docx_sections(
                 if template_dna.heading_font_name:
                     heading_run.font.name = template_dna.heading_font_name
                 if template_dna.heading_font_size:
-                    from docx.shared import Pt
                     heading_run.font.size = Pt(template_dna.heading_font_size)
                 if template_dna.heading_font_bold is not None:
                     heading_run.font.bold = template_dna.heading_font_bold
-                if template_dna.heading_font_color:
-                    try:
-                        from docx.shared import RGBColor
-                        heading_run.font.color.rgb = template_dna.heading_font_color
-                    except:
-                        pass
+                _apply_font_color(heading_run.font, template_dna.heading_font_color)
             
             # Add body items based on type
             for item in body:
@@ -454,14 +470,14 @@ def _render_docx_sections(
                     if para.runs and template_dna.subheading_font_name:
                         para.runs[0].font.name = template_dna.subheading_font_name
                     if para.runs and template_dna.subheading_font_size:
-                        from docx.shared import Pt
                         para.runs[0].font.size = Pt(template_dna.subheading_font_size)
                     elif para.runs and template_dna.body_font_size:
                         # Fall back to slightly larger body size
-                        from docx.shared import Pt
                         para.runs[0].font.size = Pt(int(template_dna.body_font_size * 1.1))
                     if para.runs and template_dna.subheading_font_bold is not None:
                         para.runs[0].font.bold = template_dna.subheading_font_bold
+                    if para.runs:
+                        _apply_font_color(para.runs[0].font, template_dna.subheading_font_color)
                         
                 elif item_type == "bullet":
                     # Clean bullet text to remove any existing markers
@@ -508,12 +524,12 @@ def _render_docx_sections(
                         if template_dna.body_font_name:
                             para.runs[0].font.name = template_dna.body_font_name
                         if template_dna.body_font_size:
-                            from docx.shared import Pt
                             para.runs[0].font.size = Pt(template_dna.body_font_size)
                         if template_dna.body_font_bold is not None:
                             para.runs[0].font.bold = template_dna.body_font_bold
                         if template_dna.body_font_italic is not None:
                             para.runs[0].font.italic = template_dna.body_font_italic
+                        _apply_font_color(para.runs[0].font, template_dna.body_font_color)
             
             # Add some spacing between sections
             if i < len(sections_data) - 1:
