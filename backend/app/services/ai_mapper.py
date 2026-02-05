@@ -93,21 +93,34 @@ Parsing MUST start strictly AFTER the title line.
 
 ---
 
-### 0.2 Sequential Parsing (MANDATORY – DO NOT REORDER)
+### 0.2 Sequential Parsing (MANDATORY – DO NOT REORDER) ⚠️ CRITICAL
 
-Process the document strictly from top to bottom.
+Process the document STRICTLY from top to bottom.
+This is the MOST IMPORTANT rule. Violating this rule is a CRITICAL FAILURE.
 
-NEVER:
-- regroup content
-- reorganize by topic
-- move paragraphs
+ABSOLUTELY NEVER:
+- regroup content by topic
+- reorganize by semantic meaning
+- move paragraphs to different positions
 - place middle content at the end
-- merge distant text
+- place end content in the middle
+- merge text from distant parts of the document
+- "optimize" the order in any way
+- "improve" the structure
 
 If line A appears before line B in the source,
-it MUST appear before line B in output.
+line A MUST appear before line B in output.
 
-Order preservation is STRICT.
+If paragraph X is in the middle of the source,
+paragraph X MUST be in the middle of the output.
+
+EXAMPLE:
+Source order: Name → Contact → Summary → Experience → Education
+Output order: Name → Contact → Summary → Experience → Education
+
+WRONG output: Name → Summary → Experience → Education → Contact (shuffled!)
+
+Order preservation is ABSOLUTE and NON-NEGOTIABLE.
 
 ---
 
@@ -265,6 +278,9 @@ Each body item MUST be one of the following types:
   }}
 ]
 
+⚠️ FINAL REMINDER: The output MUST follow the EXACT SAME ORDER as the source content.
+Do NOT shuffle, reorganize, or reorder any content. First item in source = first item in output.
+
 Return ONLY the JSON array. No explanations. No markdown. No extra text.
 """
     return prompt
@@ -309,14 +325,14 @@ async def map_content_to_sections(
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a document parser. Return only valid JSON array of sections with 'title' and 'body' fields."
+                        "content": "You are a document parser that preserves EXACT order. Return only valid JSON array of sections with 'title' and 'body' fields. CRITICAL: Content order in output MUST match source order exactly. Never reorganize or shuffle content."
                     },
                     {
                         "role": "user",
                         "content": prompt
                     }
                 ],
-                temperature=0.1,
+                temperature=0.0,  # Zero temperature for maximum determinism - no creativity
                 max_tokens=32768,
                 timeout=settings.groq_timeout
             )

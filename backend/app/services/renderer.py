@@ -405,53 +405,28 @@ def _render_docx_sections(
             if isinstance(body, str):
                 body = [{"type": "text", "content": body}]
             
-            # DEDUPLICATION: Remove items with duplicate content
-            # Strategy: If duplicates exist, prioritize "bullet" > "subheading" > "text"
+            # DEDUPLICATION: Remove duplicate content while STRICTLY preserving order
+            # Strategy: Keep the FIRST occurrence of each content, skip later duplicates
+            # DO NOT reorder based on type - order preservation is critical
             
-            # 1. Group items by normalized content
-            content_groups = {}
+            seen_normalized = set()
+            deduplicated_body = []
+            
             for item in body:
                 content = item.get("content", "").strip()
                 if not content:
                     continue
                     
-                # Normalize (remove bullets, numbers, case)
-                normalized = re.sub(r'^[-*•\d.)\s]+', '', content).lower()
+                # Normalize for comparison (remove bullets, numbers, case)
+                normalized = re.sub(r'^[-*•\d.)\s]+', '', content).lower().strip()
                 
-                if normalized not in content_groups:
-                    content_groups[normalized] = []
-                content_groups[normalized].append(item)
-            
-            # 2. Select best item for each unique content
-            deduplicated_body = []
-            
-            # We want to preserve order, so we iterate through original body
-            seen_normalized = set()
-            
-            for item in body:
-                content = item.get("content", "").strip()
-                normalized = re.sub(r'^[-*•\d.)\s]+', '', content).lower()
-                
-                if not normalized or normalized in seen_normalized:
+                # Skip if we've already seen this content
+                if normalized in seen_normalized:
+                    logger.debug(f"    Skipping duplicate: '{content[:40]}...'")
                     continue
                 
-                # Get all versions of this content
-                candidates = content_groups.get(normalized, [])
-                
-                # Pick the best one: Bullet > Subheading > Text
-                best_item = item # Default to current
-                
-                has_bullet = any(c.get("type") == "bullet" for c in candidates)
-                has_subheading = any(c.get("type") == "subheading" for c in candidates)
-                
-                if has_bullet:
-                    # Find the first bullet version
-                    best_item = next(c for c in candidates if c.get("type") == "bullet")
-                elif has_subheading:
-                    # Find the first subheading version
-                    best_item = next(c for c in candidates if c.get("type") == "subheading")
-                    
-                deduplicated_body.append(best_item)
+                # Keep this item in its original position
+                deduplicated_body.append(item)
                 seen_normalized.add(normalized)
             
             body = deduplicated_body
