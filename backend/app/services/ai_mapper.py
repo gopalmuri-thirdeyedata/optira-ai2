@@ -68,6 +68,139 @@ You MUST infer structure carefully, conservatively, and consistently.
 
 ## SECTION INFERENCE RULES (VERY IMPORTANT)
 
+### 0. Document Title Detection (FIRST PRIORITY – BEFORE Section Inference)
+
+If the FIRST non-empty line appears to be a meaningful document title, you MUST use it as the first section title.
+
+Treat the first line as a title only when:
+- it is short (typically < 12–15 words)
+- it is standalone
+- it is not a paragraph
+- it clearly represents the whole document
+
+---
+
+### 0.1 Title Consumption (MANDATORY)
+
+When a title is detected:
+
+- Remove it completely from the content before parsing begins
+- Do NOT include it again inside any section body
+- Do NOT convert it into text/subheading/bullet
+- It must appear ONLY once as the section title
+
+Parsing MUST start strictly AFTER the title line.
+
+---
+
+### 0.2 Sequential Parsing (MANDATORY – DO NOT REORDER) ⚠️ CRITICAL
+
+Process the document STRICTLY from top to bottom.
+This is the MOST IMPORTANT rule. Violating this rule is a CRITICAL FAILURE.
+
+ABSOLUTELY NEVER:
+- regroup content by topic
+- reorganize by semantic meaning
+- move paragraphs to different positions
+- place middle content at the end
+- place end content in the middle
+- merge text from distant parts of the document
+- "optimize" the order in any way
+- "improve" the structure
+
+If line A appears before line B in the source,
+line A MUST appear before line B in output.
+
+If paragraph X is in the middle of the source,
+paragraph X MUST be in the middle of the output.
+
+EXAMPLE:
+Source order: Name → Contact → Summary → Experience → Education
+Output order: Name → Contact → Summary → Experience → Education
+
+WRONG output: Name → Summary → Experience → Education → Contact (shuffled!)
+
+Order preservation is ABSOLUTE and NON-NEGOTIABLE.
+
+---
+
+### 0.3 Title Validation (ANTI-GENERIC SAFETY)
+
+Generic labels are NOT valid titles.
+
+Words like:
+- Document
+- Resume
+- CV
+- File
+- Report
+- Page
+- Template
+- Draft
+- Notes
+- Form
+- Data
+
+are NOT meaningful titles IF they appear standalone.
+
+If the first non-empty line is EXACTLY one of these words, you MUST ignore it and look for the next line.
+If it is part of a longer meaningful title (e.g. "Project Report 2024" or "Software Engineer Resume"), it is a VALID title and you should use it.
+
+---
+
+### 0.4 Line-by-Line Streaming Parse (STRICT)
+
+Parse incrementally:
+
+- read one line
+- assign immediately
+- move to next line
+
+NEVER analyze the whole document first.
+NEVER batch or restructure.
+
+This guarantees zero shuffling.
+
+---
+
+### 0.5 Title Hard Rejection (STRICT – MUST NOT USE GENERIC WORDS)
+
+If the first line equals or mostly consists of generic placeholders such as:
+
+Document, Resume, CV, File, Report, Page, Template, Draft, Form, Data
+
+You MUST:
+
+1. Skip the line completely
+2. NOT use it as a title
+3. NOT output it anywhere
+4. Continue scanning for the next meaningful line
+
+These words are metadata only.
+
+Under NO circumstances may they be used as section titles.
+
+If a person's name or meaningful heading appears next, use THAT.
+A title is rejected ONLY if it is a single standalone generic word.
+
+---
+
+### 0.6 Resume/CV Special Handling (CRITICAL FOR RESUMES)
+
+For RESUME or CV documents:
+- The FIRST SECTION TITLE should be the PERSON'S FULL NAME (not "Resume", "CV", or "Document")
+- Look for a name-like pattern: typically 2-4 capitalized words at or near the beginning
+- Examples of VALID first section titles for resumes:
+  - "John Smith"
+  - "Sarah Jane Johnson"
+  - "Gopal Murthy"
+  
+If the document appears to be a resume (contains keywords like: experience, education, skills, qualifications, employment history):
+- FIND the person's name and use it as the first section title
+- Skip any generic labels that appear before the name
+
+---
+
 ### 1. Section Titles
 Infer a section title ONLY when there is strong evidence:
 - a short standalone line
@@ -93,22 +226,16 @@ Each body item MUST be one of the following types:
 
 - "subheading"  
   → Minor internal headings inside a section.
-  Use sparingly and only when the text clearly signals a subsection.
 
 - "bullet"  
   → List items.
-  Convert content into bullets when:
-    - lines start with -, *, numbers, letters
-    - features, benefits, steps, or key points are listed
-    - multiple short, related statements appear sequentially
 
 ---
 
 ### 3. Paragraph Splitting
-- Break long paragraphs into multiple "text" blocks if they contain:
-  - multiple ideas
-  - topic transitions
-- Do NOT fragment sentences unnecessarily.
+- Break long paragraphs only when necessary
+- Do NOT fragment sentences
+- Maintain order strictly
 
 ---
 
@@ -116,10 +243,11 @@ Each body item MUST be one of the following types:
 1. Preserve ALL original meaning and wording.
 2. DO NOT summarize or shorten content.
 3. DO NOT add new facts or interpretations.
-4. DO NOT repeat content across sections.
-5. Maintain original order of information.
-6. Output MUST be valid JSON.
-7. Output MUST match the required schema exactly.
+4. DO NOT repeat content.
+5. Maintain EXACT original order.
+6. NEVER reorganize structure.
+7. Output MUST be valid JSON.
+8. Output MUST match the required schema exactly.
 
 ---
 
@@ -150,9 +278,15 @@ Each body item MUST be one of the following types:
   }}
 ]
 
+⚠️ FINAL REMINDER: The output MUST follow the EXACT SAME ORDER as the source content.
+Do NOT shuffle, reorganize, or reorder any content. First item in source = first item in output.
+
 Return ONLY the JSON array. No explanations. No markdown. No extra text.
 """
     return prompt
+
+
+
 
 
 
@@ -191,14 +325,14 @@ async def map_content_to_sections(
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a document parser. Return only valid JSON array of sections with 'title' and 'body' fields."
+                        "content": "You are a document parser that preserves EXACT order. Return only valid JSON array of sections with 'title' and 'body' fields. CRITICAL: Content order in output MUST match source order exactly. Never reorganize or shuffle content."
                     },
                     {
                         "role": "user",
                         "content": prompt
                     }
                 ],
-                temperature=0.1,
+                temperature=0.0,  # Zero temperature for maximum determinism - no creativity
                 max_tokens=32768,
                 timeout=settings.groq_timeout
             )
@@ -255,7 +389,7 @@ async def map_content_to_sections(
         )
 
 
-def _parse_ai_response(response_text: str) -> dict[str, str]:
+def _parse_ai_response(response_text: str) -> Any:
     """Parse AI response, handling markdown code blocks."""
     text = response_text.strip()
     if text.startswith("```"):

@@ -34,6 +34,23 @@ def clean_bullet_text(text: str) -> str:
     return text.strip()
 
 
+def _apply_font_color(font, color_str: Optional[str]):
+    """Helper to apply hex color string to a font object."""
+    if not color_str:
+        return
+    try:
+        from docx.shared import RGBColor
+        # color_str is expected to be 'RRGGBB'
+        if len(color_str) == 6:
+            font.color.rgb = RGBColor(
+                int(color_str[0:2], 16),
+                int(color_str[2:4], 16),
+                int(color_str[4:6], 16)
+            )
+    except Exception as e:
+        logger.debug(f"Failed to apply font color {color_str}: {e}")
+
+
 def _detect_cover_title(doc, safe_zone_end):
     """
     Find the main title paragraph on the cover page using multiple heuristics.
@@ -45,8 +62,8 @@ def _detect_cover_title(doc, safe_zone_end):
     
     candidates = []
     
-    # Search first 10 paragraphs or safe zone, whichever is smaller
-    search_range = min(10, safe_zone_end)
+    # Search the entire safe zone for the cover title
+    search_range = safe_zone_end
     
     for idx in range(search_range):
         para = doc.paragraphs[idx]
@@ -143,9 +160,14 @@ def _update_safe_zone(doc, template_dna, section_titles: list[str], document_tit
                     for run in title_para.runs[1:]:
                         run.text = ""
                     logger.info(f"  ✓ Updated cover title: '{old_title[:30]}...' → '{document_title[:30]}'")
+                    # Apply heading color to cover title for consistency
+                    if template_dna.heading_font_color:
+                        _apply_font_color(title_para.runs[0].font, template_dna.heading_font_color)
                 else:
                     # Fallback: add run if none exist
-                    title_para.add_run(document_title)
+                    run = title_para.add_run(document_title)
+                    if template_dna.heading_font_color:
+                        _apply_font_color(run.font, template_dna.heading_font_color)
                     logger.info(f"  ✓ Set cover title: '{document_title}'")
             except Exception as e:
                 logger.warning(f"  Failed to update cover title: {e}")
@@ -323,10 +345,23 @@ def _render_docx_sections(
             # Fallback: check if it's the old format
             if "sec_all" in mappings:
                 logger.warning("Received old format, converting to sections")
-                sections_data = [{"title": "Document", "body": mappings["sec_all"]}]
+                # Try to extract a meaningful title from the content instead of "Document"
+                old_content = mappings["sec_all"]
+                fallback_title = "Untitled"
+                if isinstance(old_content, str) and old_content.strip():
+                    # Get first non-empty line as title
+                    lines = [l.strip() for l in old_content.split('\n') if l.strip()]
+                    if lines:
+                        first_line = lines[0]
+                        # Clean up any type markers like [HEADING] [PARAGRAPH]
+                        import re
+                        first_line = re.sub(r'^\[.*?\]\s*', '', first_line)
+                        if first_line and len(first_line) < 100:
+                            fallback_title = first_line
+                sections_data = [{"title": fallback_title, "body": old_content}]
             else:
                 logger.error("No sections data found in mappings")
-                raise RenderError("No sections found in AI response")
+                raise RenderingError("No sections found in AI response")
         
         logger.info(f"  Rebuilding with {len(sections_data)} source sections")
         
@@ -334,7 +369,17 @@ def _render_docx_sections(
         section_titles = [sec.get("title", f"Section {i+1}") for i, sec in enumerate(sections_data)]
         
         # Use first section title as document title for cover page
-        document_title = section_titles[0] if section_titles else "Document"
+        # IMPORTANT: Filter out generic placeholder titles
+        generic_titles = ["document", "resume", "cv", "file", "report", "template", "draft", "form", "data", "page", "untitled"]
+        document_title = None
+        for title in section_titles:
+            if title and title.lower().strip() not in generic_titles:
+                document_title = title
+                break
+        
+        # If all titles are generic, use first one anyway (better than hardcoded "Document")
+        if not document_title and section_titles:
+            document_title = section_titles[0]
         
         # Step 0: Update safe zone (cover page title + TOC) with new section titles
         try:
@@ -360,53 +405,28 @@ def _render_docx_sections(
             if isinstance(body, str):
                 body = [{"type": "text", "content": body}]
             
-            # DEDUPLICATION: Remove items with duplicate content
-            # Strategy: If duplicates exist, prioritize "bullet" > "subheading" > "text"
+            # DEDUPLICATION: Remove duplicate content while STRICTLY preserving order
+            # Strategy: Keep the FIRST occurrence of each content, skip later duplicates
+            # DO NOT reorder based on type - order preservation is critical
             
-            # 1. Group items by normalized content
-            content_groups = {}
+            seen_normalized = set()
+            deduplicated_body = []
+            
             for item in body:
                 content = item.get("content", "").strip()
                 if not content:
                     continue
                     
-                # Normalize (remove bullets, numbers, case)
-                normalized = re.sub(r'^[-*•\d.)\s]+', '', content).lower()
+                # Normalize for comparison (remove bullets, numbers, case)
+                normalized = re.sub(r'^[-*•\d.)\s]+', '', content).lower().strip()
                 
-                if normalized not in content_groups:
-                    content_groups[normalized] = []
-                content_groups[normalized].append(item)
-            
-            # 2. Select best item for each unique content
-            deduplicated_body = []
-            
-            # We want to preserve order, so we iterate through original body
-            seen_normalized = set()
-            
-            for item in body:
-                content = item.get("content", "").strip()
-                normalized = re.sub(r'^[-*•\d.)\s]+', '', content).lower()
-                
-                if not normalized or normalized in seen_normalized:
+                # Skip if we've already seen this content
+                if normalized in seen_normalized:
+                    logger.debug(f"    Skipping duplicate: '{content[:40]}...'")
                     continue
                 
-                # Get all versions of this content
-                candidates = content_groups.get(normalized, [])
-                
-                # Pick the best one: Bullet > Subheading > Text
-                best_item = item # Default to current
-                
-                has_bullet = any(c.get("type") == "bullet" for c in candidates)
-                has_subheading = any(c.get("type") == "subheading" for c in candidates)
-                
-                if has_bullet:
-                    # Find the first bullet version
-                    best_item = next(c for c in candidates if c.get("type") == "bullet")
-                elif has_subheading:
-                    # Find the first subheading version
-                    best_item = next(c for c in candidates if c.get("type") == "subheading")
-                    
-                deduplicated_body.append(best_item)
+                # Keep this item in its original position
+                deduplicated_body.append(item)
                 seen_normalized.add(normalized)
             
             body = deduplicated_body
@@ -421,16 +441,10 @@ def _render_docx_sections(
                 if template_dna.heading_font_name:
                     heading_run.font.name = template_dna.heading_font_name
                 if template_dna.heading_font_size:
-                    from docx.shared import Pt
                     heading_run.font.size = Pt(template_dna.heading_font_size)
                 if template_dna.heading_font_bold is not None:
                     heading_run.font.bold = template_dna.heading_font_bold
-                if template_dna.heading_font_color:
-                    try:
-                        from docx.shared import RGBColor
-                        heading_run.font.color.rgb = template_dna.heading_font_color
-                    except:
-                        pass
+                _apply_font_color(heading_run.font, template_dna.heading_font_color)
             
             # Add body items based on type
             for item in body:
@@ -454,14 +468,14 @@ def _render_docx_sections(
                     if para.runs and template_dna.subheading_font_name:
                         para.runs[0].font.name = template_dna.subheading_font_name
                     if para.runs and template_dna.subheading_font_size:
-                        from docx.shared import Pt
                         para.runs[0].font.size = Pt(template_dna.subheading_font_size)
                     elif para.runs and template_dna.body_font_size:
                         # Fall back to slightly larger body size
-                        from docx.shared import Pt
                         para.runs[0].font.size = Pt(int(template_dna.body_font_size * 1.1))
                     if para.runs and template_dna.subheading_font_bold is not None:
                         para.runs[0].font.bold = template_dna.subheading_font_bold
+                    if para.runs:
+                        _apply_font_color(para.runs[0].font, template_dna.subheading_font_color)
                         
                 elif item_type == "bullet":
                     # Clean bullet text to remove any existing markers
@@ -508,12 +522,12 @@ def _render_docx_sections(
                         if template_dna.body_font_name:
                             para.runs[0].font.name = template_dna.body_font_name
                         if template_dna.body_font_size:
-                            from docx.shared import Pt
                             para.runs[0].font.size = Pt(template_dna.body_font_size)
                         if template_dna.body_font_bold is not None:
                             para.runs[0].font.bold = template_dna.body_font_bold
                         if template_dna.body_font_italic is not None:
                             para.runs[0].font.italic = template_dna.body_font_italic
+                        _apply_font_color(para.runs[0].font, template_dna.body_font_color)
             
             # Add some spacing between sections
             if i < len(sections_data) - 1:
