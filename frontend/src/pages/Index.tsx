@@ -1,6 +1,8 @@
 import { useState, useCallback } from "react";
-import { ArrowRight, Sparkles, FileOutput, Layers } from "lucide-react";
+import { ArrowRight, Sparkles, FileOutput, Layers, FileText, FileType } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { FileUpload } from "@/components/FileUpload";
 import { StatusIndicator } from "@/components/StatusIndicator";
 import { ResultDownload } from "@/components/ResultDownload";
@@ -13,6 +15,7 @@ import { useDocumentProcessor } from "@/hooks/useDocumentProcessor";
 const Index = () => {
   const [normalFile, setNormalFile] = useState<File | null>(null);
   const [targetFile, setTargetFile] = useState<File | null>(null);
+  const [outputFormat, setOutputFormat] = useState<"docx" | "pdf">("docx");
   
   const {
     state,
@@ -25,9 +28,9 @@ const Index = () => {
 
   const handleSubmit = useCallback(() => {
     if (normalFile && targetFile) {
-      processFiles(normalFile, targetFile);
+      processFiles(normalFile, targetFile, outputFormat);
     }
-  }, [normalFile, targetFile, processFiles]);
+  }, [normalFile, targetFile, outputFormat, processFiles]);
 
   const handleReset = useCallback(() => {
     setNormalFile(null);
@@ -103,6 +106,41 @@ const Index = () => {
                   onFileChange={setTargetFile}
                   disabled={isProcessing}
                 />
+              </div>
+
+              {/* Output Format Selector */}
+              <div className="flex justify-center pt-4">
+                <div className="w-full max-w-md p-6 rounded-lg bg-secondary/30 border border-border/50">
+                  <Label className="text-sm font-medium mb-3 block">Output Format</Label>
+                  <RadioGroup value={outputFormat} onValueChange={(val: "docx" | "pdf") => setOutputFormat(val)} className="grid grid-cols-2 gap-4">
+                    <div>
+                      <RadioGroupItem value="docx" id="format-docx" className="peer sr-only" />
+                      <Label
+                        htmlFor="format-docx"
+                        className="flex flex-col items-center justify-between rounded-md border-2 border-border bg-background p-4 hover:bg-secondary cursor-pointer peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5"
+                      >
+                        <FileText className="mb-2 h-6 w-6" />
+                        <div className="text-center">
+                          <div className="font-semibold">Word</div>
+                          <div className="text-xs text-muted-foreground">DOCX Format</div>
+                        </div>
+                      </Label>
+                    </div>
+                    <div>
+                      <RadioGroupItem value="pdf" id="format-pdf" className="peer sr-only" />
+                      <Label
+                        htmlFor="format-pdf"
+                        className="flex flex-col items-center justify-between rounded-md border-2 border-border bg-background p-4 hover:bg-secondary cursor-pointer peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5"
+                      >
+                        <FileType className="mb-2 h-6 w-6" />
+                        <div className="text-center">
+                          <div className="font-semibold">PDF</div>
+                          <div className="text-xs text-muted-foreground">PDF Format</div>
+                        </div>
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
               </div>
 
               {/* Submit Button */}

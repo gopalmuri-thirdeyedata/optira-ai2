@@ -4,7 +4,7 @@ Maps source content blocks to template sections based on meaning.
 """
 import json
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from groq import Groq
 from pydantic import BaseModel, ValidationError

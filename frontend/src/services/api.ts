@@ -16,11 +16,13 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 export async function processDocuments(
   normalFile: File,
   targetFile: File,
+  outputFormat: "docx" | "pdf" = "docx",
   onProgress?: (step: "uploading" | "analyzing" | "formatting" | "generating") => void
 ): Promise<ProcessResponse> {
   const formData = new FormData();
   formData.append("normal_file", normalFile);
   formData.append("target_file", targetFile);
+  formData.append("output_format", outputFormat);
 
   try {
     // Notify upload started

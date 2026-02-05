@@ -1,13 +1,14 @@
 """
 API endpoints for document transformation.
 """
+import logging
 import os
 import uuid
 import shutil
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi import APIRouter, File, Form, UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -24,9 +25,10 @@ from app.services.parser import extract_content
 from app.services.analyzer import analyze_template
 from app.services.ai_mapper import map_content_to_placeholders
 from app.services.renderer import render_document
-
+from app.services.pdf_converter import convert_docx_to_pdf
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class ProcessResponse(BaseModel):
@@ -114,6 +116,7 @@ async def process_documents(
     background_tasks: BackgroundTasks,
     normal_file: Annotated[UploadFile, File(description="Source document (DOCX, PDF, or PPTX)")],
     target_file: Annotated[UploadFile, File(description="Template document with {{PLACEHOLDERS}} (DOCX or PPTX)")],
+    output_format: Annotated[Literal["docx", "pdf"], Form(description="Output format: 'docx' for Word document, 'pdf' for PDF")] = "docx",
 ):
     """
     Process documents by extracting content from normal_file and
@@ -164,10 +167,31 @@ async def process_documents(
             template_analysis
         )
         
+        # Step 5: Convert to PDF if requested
+        final_path = output_path
+        final_filename = output_filename
+        
+        if output_format == "pdf":
+            logger.info("PDF output format requested, converting DOCX to PDF")
+            pdf_filename = f"output_{Path(target_file.filename).stem}.pdf"
+            pdf_path = get_temp_dir() / job_id / pdf_filename
+            
+            try:
+                await convert_docx_to_pdf(output_path, pdf_path)
+                final_path = pdf_path
+                final_filename = pdf_filename
+                logger.info(f"PDF conversion successful: {pdf_filename}")
+            except Exception as e:
+                logger.error(f"PDF conversion failed: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"PDF conversion failed: {str(e)}"
+                )
+        
         return ProcessResponse(
             success=True,
             message="Document processed successfully",
-            download_url=f"/api/download/{job_id}/{output_filename}",
+            download_url=f"/api/download/{job_id}/{final_filename}",
             job_id=job_id
         )
         

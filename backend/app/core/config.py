@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.3-70b-versatile"
     groq_timeout: int = 60
     
+    # ConvertAPI
+    convertapi_secret: str = ""
+    
     # File handling
     max_file_size_mb: int = 50
     temp_dir: str = "temp_uploads"

@@ -12,7 +12,7 @@ interface UseDocumentProcessorResult {
   /** Error message (when state is 'error') */
   error: string | null;
   /** Start processing the documents */
-  processFiles: (normalFile: File, targetFile: File) => Promise<void>;
+  processFiles: (normalFile: File, targetFile: File, outputFormat?: "docx" | "pdf") => Promise<void>;
   /** Reset to initial state */
   reset: () => void;
 }
@@ -26,7 +26,7 @@ export function useDocumentProcessor(): UseDocumentProcessorResult {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const processFiles = useCallback(async (normalFile: File, targetFile: File) => {
+  const processFiles = useCallback(async (normalFile: File, targetFile: File, outputFormat: "docx" | "pdf" = "docx") => {
     setState("processing");
     setCurrentStep("uploading");
     setError(null);
@@ -45,7 +45,7 @@ export function useDocumentProcessor(): UseDocumentProcessorResult {
     }, 2000);
 
     try {
-      const result = await processDocuments(normalFile, targetFile);
+      const result = await processDocuments(normalFile, targetFile, outputFormat);
       
       clearInterval(progressInterval);
       
