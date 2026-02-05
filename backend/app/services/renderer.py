@@ -354,7 +354,6 @@ def _render_docx_sections(
                     if lines:
                         first_line = lines[0]
                         # Clean up any type markers like [HEADING] [PARAGRAPH]
-                        import re
                         first_line = re.sub(r'^\[.*?\]\s*', '', first_line)
                         if first_line and len(first_line) < 100:
                             fallback_title = first_line
@@ -395,6 +394,10 @@ def _render_docx_sections(
             if idx < len(doc.paragraphs):
                 p = doc.paragraphs[idx]._element
                 p.getparent().remove(p)
+        
+        # Step 1.5: Add a page break to ensure content starts on a new page
+        doc.add_page_break()
+        logger.info("  ✓ Added page break after safe zone")
         
         # Step 2: Rebuild sections using template DNA
         for i, section in enumerate(sections_data):

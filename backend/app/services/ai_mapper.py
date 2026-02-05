@@ -239,15 +239,17 @@ Each body item MUST be one of the following types:
 
 ---
 
-## STRICT RULES
-1. Preserve ALL original meaning and wording.
-2. DO NOT summarize or shorten content.
-3. DO NOT add new facts or interpretations.
-4. DO NOT repeat content.
-5. Maintain EXACT original order.
-6. NEVER reorganize structure.
-7. Output MUST be valid JSON.
-8. Output MUST match the required schema exactly.
+## STRICT RULES (NON-NEGOTIABLE)
+1. **VERBATIM CONTENT**: Copy text EXACTLY as it appears in the source. Do NOT rephrase, paraphrase, or improve wording.
+2. Preserve ALL original meaning and wording CHARACTER BY CHARACTER.
+3. DO NOT summarize or shorten content.
+4. DO NOT add new facts, interpretations, or infer content that is not explicitly stated.
+5. DO NOT repeat content.
+6. Maintain EXACT original order.
+7. NEVER reorganize structure.
+8. If structure is ambiguous, default to "text" type. Do NOT invent subheadings that aren't in the source.
+9. Output MUST be valid JSON.
+10. Output MUST match the required schema exactly.
 
 ---
 
@@ -290,13 +292,136 @@ Return ONLY the JSON array. No explanations. No markdown. No extra text.
 
 
 
+def _chunk_content_blocks(blocks: list, chunk_size: int = 25) -> list[list]:
+    """
+    Split content blocks into chunks for processing long documents.
+    
+    Args:
+        blocks: List of ContentBlock objects
+        chunk_size: Maximum number of blocks per chunk
+        
+    Returns:
+        List of chunk lists
+    """
+    if len(blocks) <= chunk_size:
+        return [blocks]
+    
+    chunks = []
+    for i in range(0, len(blocks), chunk_size):
+        chunk = blocks[i:i + chunk_size]
+        chunks.append(chunk)
+    
+    logger.info(f"Split {len(blocks)} blocks into {len(chunks)} chunks of ~{chunk_size} blocks each")
+    return chunks
+
+
+def _merge_section_mappings(all_sections: list[list[dict]]) -> list[dict]:
+    """
+    Merge section mappings from multiple chunks.
+    
+    Strategy: 
+    1. First, merge adjacent sections across chunk boundaries
+    2. Then, deduplicate sections with the same title globally
+    
+    Args:
+        all_sections: List of section lists from each chunk
+        
+    Returns:
+        Merged and deduplicated list of sections
+    """
+    if not all_sections:
+        return []
+    
+    if len(all_sections) == 1:
+        return all_sections[0]
+    
+    # Step 1: Merge adjacent sections across chunk boundaries
+    merged = []
+    
+    for i, chunk_sections in enumerate(all_sections):
+        if not chunk_sections:
+            continue
+            
+        if i == 0:
+            # First chunk: add all sections
+            merged.extend(chunk_sections)
+        else:
+            # Check if we need to merge with the last section from previous chunk
+            if merged and chunk_sections:
+                last_section = merged[-1]
+                first_section = chunk_sections[0]
+                
+                # Normalize titles for comparison (lowercase, strip)
+                last_title = last_section.get("title", "").lower().strip()
+                first_title = first_section.get("title", "").lower().strip()
+                
+                if last_title and first_title and last_title == first_title:
+                    # Merge bodies
+                    logger.info(f"  Merging section across chunks: '{last_section.get('title', '')}'")
+                    last_body = last_section.get("body", [])
+                    first_body = first_section.get("body", [])
+                    
+                    if isinstance(last_body, str):
+                        last_body = [{"type": "text", "content": last_body}]
+                    if isinstance(first_body, str):
+                        first_body = [{"type": "text", "content": first_body}]
+                    
+                    # Merge bodies
+                    merged[-1]["body"] = last_body + first_body
+                    
+                    # Add remaining sections from this chunk (skip first since we merged it)
+                    merged.extend(chunk_sections[1:])
+                else:
+                    # No merge needed, just append all sections
+                    merged.extend(chunk_sections)
+            else:
+                # No previous sections, just append
+                merged.extend(chunk_sections)
+    
+    logger.info(f"Merged {len(all_sections)} chunks into {len(merged)} sections")
+    
+    # Step 2: Global deduplication - merge all sections with the same title
+    deduplicated = []
+    seen_titles = {}  # Map of normalized title -> index in deduplicated list
+    
+    for section in merged:
+        title = section.get("title", "")
+        normalized_title = title.lower().strip()
+        
+        if normalized_title in seen_titles:
+            # Merge with existing section
+            existing_idx = seen_titles[normalized_title]
+            logger.info(f"  Deduplicating section: '{title}' (merging into previous occurrence)")
+            
+            existing_body = deduplicated[existing_idx].get("body", [])
+            new_body = section.get("body", [])
+            
+            if isinstance(existing_body, str):
+                existing_body = [{"type": "text", "content": existing_body}]
+            if isinstance(new_body, str):
+                new_body = [{"type": "text", "content": new_body}]
+            
+            # Merge bodies
+            deduplicated[existing_idx]["body"] = existing_body + new_body
+        else:
+            # First occurrence of this title
+            seen_titles[normalized_title] = len(deduplicated)
+            deduplicated.append(section)
+    
+    logger.info(f"After deduplication: {len(deduplicated)} unique sections")
+    return deduplicated
+
+
+
 async def map_content_to_sections(
     content: ExtractedContent,
     analysis: TemplateAnalysis,
-    max_retries: int = 2
+    max_retries: int = 2,
+    chunk_size: int = 25
 ) -> SectionMapping:
     """
     Use Groq LLM to map content blocks to template sections.
+    For long documents, splits content into chunks to maintain accuracy.
     """
     settings = get_settings()
     
@@ -311,82 +436,103 @@ async def map_content_to_sections(
         raise AIMapperError("No sections found in template")
     
     client = Groq(api_key=settings.groq_api_key)
-    prompt = create_section_mapping_prompt(content, analysis)
     
-    logger.debug(f"Prompt preview: {prompt[:500]}...")
+    # Split content into chunks if needed
+    chunks = _chunk_content_blocks(content.blocks, chunk_size)
+    all_sections = []
     
-    last_error: Exception | None = None
+    # Process each chunk
+    for chunk_idx, chunk_blocks in enumerate(chunks):
+        logger.info(f"Processing chunk {chunk_idx + 1}/{len(chunks)} ({len(chunk_blocks)} blocks)")
+        
+        # Create a temporary ExtractedContent for this chunk
+        chunk_content = ExtractedContent(blocks=chunk_blocks, source_file=content.source_file)
+        prompt = create_section_mapping_prompt(chunk_content, analysis)
+        
+        logger.debug(f"Chunk {chunk_idx + 1} prompt preview: {prompt[:300]}...")
+        
+        last_error: Exception | None = None
+        chunk_sections = None
+        
+        for attempt in range(max_retries + 1):
+            logger.info(f"  Chunk {chunk_idx + 1} attempt {attempt + 1}/{max_retries + 1}")
+            try:
+                response = client.chat.completions.create(
+                    model=settings.groq_model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are a document parser that preserves EXACT order. Return only valid JSON array of sections with 'title' and 'body' fields. CRITICAL: Content order in output MUST match source order exactly. Never reorganize or shuffle content."
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    temperature=0.0,  # Zero temperature for maximum determinism - no creativity
+                    max_tokens=32768,
+                    timeout=settings.groq_timeout
+                )
+                
+                response_text = response.choices[0].message.content.strip()
+                logger.info(f"  Chunk {chunk_idx + 1} AI response received ({len(response_text)} chars)")
+                logger.debug(f"  Chunk {chunk_idx + 1} AI response: {response_text[:500]}...")
+                
+                # Parse JSON response - expecting array
+                sections_array = _parse_ai_response(response_text)
+                
+                if isinstance(sections_array, list):
+                    chunk_sections = sections_array
+                    logger.info(f"  Chunk {chunk_idx + 1} parsed {len(sections_array)} sections")
+                    for i, sec in enumerate(sections_array):
+                        title = sec.get("title", "")
+                        body = sec.get("body", "")
+                        logger.info(f"    Section {i+1}: '{title[:40]}' ({len(body)} items)")
+                    break  # Success, exit retry loop
+                else:
+                    # Unexpected format
+                    logger.warning(f"  Chunk {chunk_idx + 1} returned unexpected format")
+                    chunk_sections = []
+                    break
+                    
+            except ValidationError as e:
+                logger.error(f"  Chunk {chunk_idx + 1} validation error: {e}")
+                last_error = AIResponseValidationError(
+                    f"AI response validation failed: {str(e)}",
+                    details=str(e)
+                )
+            except json.JSONDecodeError as e:
+                logger.error(f"  Chunk {chunk_idx + 1} JSON decode error: {e}")
+                last_error = AIResponseValidationError(
+                    f"AI response is not valid JSON: {str(e)}",
+                    details=response_text if 'response_text' in locals() else None
+                )
+            except Exception as e:
+                logger.error(f"  Chunk {chunk_idx + 1} API error: {e}")
+                if "timeout" in str(e).lower():
+                    last_error = GroqAPIError(f"Groq API timeout: {str(e)}")
+                else:
+                    last_error = GroqAPIError(f"Groq API error: {str(e)}")
+        
+        # If chunk processing failed after retries, use fallback
+        if chunk_sections is None:
+            logger.warning(f"  Chunk {chunk_idx + 1} failed, using fallback")
+            # Create a simple fallback - treat all blocks as a single section
+            chunk_sections = [{
+                "title": f"Section {chunk_idx + 1}",
+                "body": [{"type": "text", "content": block.content} for block in chunk_blocks]
+            }]
+        
+        all_sections.append(chunk_sections)
     
-    for attempt in range(max_retries + 1):
-        logger.info(f"AI mapping attempt {attempt + 1}/{max_retries + 1}")
-        try:
-            response = client.chat.completions.create(
-                model=settings.groq_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a document parser that preserves EXACT order. Return only valid JSON array of sections with 'title' and 'body' fields. CRITICAL: Content order in output MUST match source order exactly. Never reorganize or shuffle content."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.0,  # Zero temperature for maximum determinism - no creativity
-                max_tokens=32768,
-                timeout=settings.groq_timeout
-            )
-            
-            response_text = response.choices[0].message.content.strip()
-            logger.info(f"AI response received ({len(response_text)} chars)")
-            logger.debug(f"AI response: {response_text[:500]}...")
-            
-            # Parse JSON response - expecting array
-            sections_array = _parse_ai_response(response_text)
-            
-            # Store as {"sections": [...]} for the renderer
-            if isinstance(sections_array, list):
-                mapping_dict = {"sections": sections_array}
-                logger.info(f"Parsed {len(sections_array)} sections from source")
-                for i, sec in enumerate(sections_array):
-                    title = sec.get("title", "")
-                    body = sec.get("body", "")
-                    logger.info(f"  Section {i+1}: '{title[:40]}' ({len(body)} chars)")
-            else:
-                # Fallback if AI returns dict instead of array
-                mapping_dict = sections_array
-                logger.warning("AI returned dict instead of array, using as-is")
-            
-            return SectionMapping(mappings=mapping_dict)
-            
-        except ValidationError as e:
-            logger.error(f"Validation error: {e}")
-            last_error = AIResponseValidationError(
-                f"AI response validation failed: {str(e)}",
-                details=str(e)
-            )
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error: {e}")
-            last_error = AIResponseValidationError(
-                f"AI response is not valid JSON: {str(e)}",
-                details=response_text if 'response_text' in locals() else None
-            )
-        except Exception as e:
-            logger.error(f"API error: {e}")
-            if "timeout" in str(e).lower():
-                last_error = GroqAPIError(f"Groq API timeout: {str(e)}")
-            else:
-                last_error = GroqAPIError(f"Groq API error: {str(e)}")
+    # Merge all chunk results
+    merged_sections = _merge_section_mappings(all_sections)
     
-    # All retries failed - use fallback
-    logger.warning("AI mapping failed, using fallback sequential mapping")
-    try:
-        return _fallback_sequential_mapping(content, analysis)
-    except Exception:
-        raise AIMapperError(
-            f"AI mapping failed after {max_retries + 1} attempts",
-            details=str(last_error) if last_error else None
-        )
+    # Store as {"sections": [...]} for the renderer
+    mapping_dict = {"sections": merged_sections}
+    logger.info(f"Final result: {len(merged_sections)} sections total")
+    
+    return SectionMapping(mappings=mapping_dict)
 
 
 def _parse_ai_response(response_text: str) -> Any:
