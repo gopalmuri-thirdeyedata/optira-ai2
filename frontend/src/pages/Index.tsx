@@ -60,10 +60,10 @@ const Index = () => {
             <Sparkles className="w-3 h-3" />
             AI-Powered Transformation
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold text-foreground tracking-tight">
-            Thirdeyedata <span className="text-primary">Format Hub</span>
+          <h1 className="text-3xl md:text-4xl font-bold text-foreground text-primary tracking-tight">
+            Thirdeyedata - <span className="text-primary">Format Hub</span>
           </h1>
-          <p className="text-lg text-muted-foreground leading-relaxed">
+          <p className="text-lg text-gray-900 leading-relaxed">
             Standardize your documents instantly. Upload your content and a template to generate perfectly formatted reports, proposals, and presentations that match your corporate identity.
           </p>
         </section>
