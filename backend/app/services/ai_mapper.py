@@ -172,6 +172,22 @@ A title is rejected ONLY if it is a single standalone generic word.
 
 ---
 
+### 0.6 Resume/CV Special Handling (CRITICAL FOR RESUMES)
+
+For RESUME or CV documents:
+- The FIRST SECTION TITLE should be the PERSON'S FULL NAME (not "Resume", "CV", or "Document")
+- Look for a name-like pattern: typically 2-4 capitalized words at or near the beginning
+- Examples of VALID first section titles for resumes:
+  - "John Smith"
+  - "Sarah Jane Johnson"
+  - "Gopal Murthy"
+  
+If the document appears to be a resume (contains keywords like: experience, education, skills, qualifications, employment history):
+- FIND the person's name and use it as the first section title
+- Skip any generic labels that appear before the name
+
+---
+
 ### 1. Section Titles
 Infer a section title ONLY when there is strong evidence:
 - a short standalone line

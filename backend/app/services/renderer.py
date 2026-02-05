@@ -345,10 +345,23 @@ def _render_docx_sections(
             # Fallback: check if it's the old format
             if "sec_all" in mappings:
                 logger.warning("Received old format, converting to sections")
-                sections_data = [{"title": "Document", "body": mappings["sec_all"]}]
+                # Try to extract a meaningful title from the content instead of "Document"
+                old_content = mappings["sec_all"]
+                fallback_title = "Untitled"
+                if isinstance(old_content, str) and old_content.strip():
+                    # Get first non-empty line as title
+                    lines = [l.strip() for l in old_content.split('\n') if l.strip()]
+                    if lines:
+                        first_line = lines[0]
+                        # Clean up any type markers like [HEADING] [PARAGRAPH]
+                        import re
+                        first_line = re.sub(r'^\[.*?\]\s*', '', first_line)
+                        if first_line and len(first_line) < 100:
+                            fallback_title = first_line
+                sections_data = [{"title": fallback_title, "body": old_content}]
             else:
                 logger.error("No sections data found in mappings")
-                raise RenderError("No sections found in AI response")
+                raise RenderingError("No sections found in AI response")
         
         logger.info(f"  Rebuilding with {len(sections_data)} source sections")
         
@@ -356,7 +369,17 @@ def _render_docx_sections(
         section_titles = [sec.get("title", f"Section {i+1}") for i, sec in enumerate(sections_data)]
         
         # Use first section title as document title for cover page
-        document_title = section_titles[0] if section_titles else "Document"
+        # IMPORTANT: Filter out generic placeholder titles
+        generic_titles = ["document", "resume", "cv", "file", "report", "template", "draft", "form", "data", "page", "untitled"]
+        document_title = None
+        for title in section_titles:
+            if title and title.lower().strip() not in generic_titles:
+                document_title = title
+                break
+        
+        # If all titles are generic, use first one anyway (better than hardcoded "Document")
+        if not document_title and section_titles:
+            document_title = section_titles[0]
         
         # Step 0: Update safe zone (cover page title + TOC) with new section titles
         try:
