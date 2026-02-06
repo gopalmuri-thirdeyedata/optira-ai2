@@ -2,7 +2,6 @@
 Content extraction from source documents (DOCX, PDF, PPTX).
 Extracts text blocks preserving order but ignoring original formatting.
 """
-import re
 from pathlib import Path
 from typing import Literal
 
@@ -54,7 +53,6 @@ def _extract_from_docx(file_path: Path) -> ExtractedContent:
     """Extract content from DOCX file."""
     try:
         from docx import Document
-        from docx.oxml.ns import qn
         
         doc = Document(str(file_path))
         blocks: list[ContentBlock] = []

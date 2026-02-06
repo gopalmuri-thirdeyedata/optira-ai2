@@ -3,13 +3,13 @@ Template analyzer for target documents.
 Uses section-based analysis: identifies Heading + Body pairs to create semantic sections.
 """
 import logging
-import re
 from pathlib import Path
-from typing import Literal, Any
+from typing import Literal
 
 from pydantic import BaseModel
 
 from app.core.exceptions import (
+    AnalysisError,
     ParsingError, 
     UnsupportedFileTypeError
 )
@@ -198,7 +198,7 @@ def _analyze_docx_sections(file_path: Path) -> TemplateAnalysis:
             first_content_section_idx=first_heading_idx if first_heading_idx != -1 else 0
         )
         
-        logger.info(f"  Template DNA extracted:")
+        logger.info("  Template DNA extracted:")
         logger.info(f"    Heading style: {heading_style_name}")
         logger.info(f"    Body style: {body_style_name}")
         logger.info(f"    Safe zone: 0-{safe_zone_end}")
@@ -238,7 +238,7 @@ def _is_structural_paragraph(para, style_name: str, text: str) -> bool:
         # Check if paragraph contains images
         if para._element.xpath('.//pic:pic'):
             return True  # Has images - preserve
-    except:
+    except Exception:
         pass
     
     # Check if in header/footer section (not just "Header" style)
@@ -249,7 +249,7 @@ def _is_structural_paragraph(para, style_name: str, text: str) -> bool:
             # Only if it's an actual header/footer style (not "Heading")
             if 'heading' not in style_lower:
                 return True
-    except:
+    except Exception:
         pass
     
     # Everything else is CONTENT (will be replaced)

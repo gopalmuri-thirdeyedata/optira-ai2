@@ -98,7 +98,7 @@ async def convert_docx_to_pdf(docx_path: Path, pdf_path: Path) -> Path:
         try:
             error_json = e.response.json()
             error_detail = f"{error_detail}: {error_json}"
-        except:
+        except Exception:
             error_detail = f"{error_detail}: {e.response.text}"
         
         raise PDFConversionError(

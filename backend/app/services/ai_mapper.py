@@ -4,7 +4,7 @@ Maps source content blocks to template sections based on meaning.
 """
 import json
 import logging
-from typing import Any, Literal
+from typing import Any
 
 from groq import Groq
 from pydantic import BaseModel, ValidationError
@@ -12,7 +12,7 @@ from pydantic import BaseModel, ValidationError
 from app.core.config import get_settings
 from app.core.exceptions import AIMapperError, AIResponseValidationError, GroqAPIError
 from app.services.parser import ExtractedContent, content_to_text_summary
-from app.services.analyzer import TemplateAnalysis, get_section_descriptions
+from app.services.analyzer import TemplateAnalysis
 
 logger = logging.getLogger(__name__)
 

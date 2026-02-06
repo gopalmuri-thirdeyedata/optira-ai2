@@ -56,3 +56,9 @@ class RenderingError(BaseAppException):
 class GroqAPIError(BaseAppException):
     """Raised when Groq API call fails."""
     pass
+
+
+class AnalysisError(BaseAppException):
+    """Raised when document analysis fails."""
+    pass
+

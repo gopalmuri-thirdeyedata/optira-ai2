@@ -1,0 +1,47 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    paths:
+      - 'frontend/**'
+  pull_request:
+    branches: [ "main", "master" ]
+    paths:
+      - 'frontend/**'
+
+defaults:
+  run:
+    working-directory: ./frontend
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Lint
+      run: npm run lint
+
+    # Note: Adjust if you have actual tests. 
+    # If 'npm run test' fails because no tests are found, you might need to add a dummy test.
+    - name: Test
+      run: npm run test
+
+    - name: Build
+      run: npm run build

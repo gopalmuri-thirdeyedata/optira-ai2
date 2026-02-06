@@ -2,7 +2,6 @@
 API endpoints for document transformation.
 """
 import logging
-import os
 import uuid
 import shutil
 from pathlib import Path
@@ -16,7 +15,6 @@ from app.core.config import get_settings
 from app.core.exceptions import (
     BaseAppException,
     UnsupportedFileTypeError,
-    FileTooLargeError,
     PlaceholderNotFoundError,
     AIMapperError,
     RenderingError,
@@ -168,7 +166,6 @@ async def process_documents(
         )
         
         # Step 5: Convert to PDF if requested
-        final_path = output_path
         final_filename = output_filename
         
         if output_format == "pdf":
@@ -178,7 +175,6 @@ async def process_documents(
             
             try:
                 await convert_docx_to_pdf(output_path, pdf_path)
-                final_path = pdf_path
                 final_filename = pdf_filename
                 logger.info(f"PDF conversion successful: {pdf_filename}")
             except Exception as e:

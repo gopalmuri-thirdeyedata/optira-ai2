@@ -6,7 +6,7 @@ preserving the template's heading styles, fonts, header/footer, images, and layo
 import logging
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from app.core.exceptions import RenderingError, UnsupportedFileTypeError
 from app.services.ai_mapper import SectionMapping
@@ -102,7 +102,7 @@ def _detect_cover_title(doc, safe_zone_end):
         try:
             if para.alignment == WD_ALIGN_PARAGRAPH.CENTER:
                 score += 15
-        except:
+        except Exception:
             pass
             
         # 4. Position bonus (earlier = more likely)
@@ -140,7 +140,7 @@ def _update_safe_zone(doc, template_dna, section_titles: list[str], document_tit
     """
     safe_zone_end = template_dna.safe_zone_end_idx
     
-    logger.info(f"  Updating safe zone (cover + TOC)...")
+    logger.info("  Updating safe zone (cover + TOC)...")
     
     # === STEP 1: Update Cover Page Title ===
     if not document_title and section_titles:
@@ -272,9 +272,9 @@ def _update_safe_zone(doc, template_dna, section_titles: list[str], document_tit
         logger.info(f"  Updated {updated_count}/{len(section_titles)} TOC entries")
     else:
         if not toc_entries:
-            logger.info(f"  ⚠ No TOC entries found to update")
+            logger.info("  ⚠ No TOC entries found to update")
         elif not section_titles:
-            logger.info(f"  ⚠ No section titles to populate TOC")
+            logger.info("  ⚠ No section titles to populate TOC")
 
 
 
@@ -324,7 +324,7 @@ def _render_docx_sections(
     """
     try:
         from docx import Document
-        from docx.shared import RGBColor, Pt
+        from docx.shared import Pt
         
         doc = Document(str(template_path))
         mappings = mapping.mappings
@@ -332,9 +332,9 @@ def _render_docx_sections(
         
         if not template_dna:
             logger.error("No template DNA found - cannot reconstruct")
-            raise RenderError("Template DNA not extracted")
+            raise RenderingError("Template DNA not extracted")
         
-        logger.info(f"Rendering DOCX using template reconstruction")
+        logger.info("Rendering DOCX using template reconstruction")
         logger.info(f"  Template DNA: heading='{template_dna.heading_style_name}', body='{template_dna.body_style_name}'")
         logger.info(f"  Safe zone: paras 0-{template_dna.safe_zone_end_idx}")
         logger.info(f"  First content section: para {template_dna.first_content_section_idx}")
@@ -350,7 +350,7 @@ def _render_docx_sections(
                 fallback_title = "Untitled"
                 if isinstance(old_content, str) and old_content.strip():
                     # Get first non-empty line as title
-                    lines = [l.strip() for l in old_content.split('\n') if l.strip()]
+                    lines = [line.strip() for line in old_content.split('\n') if line.strip()]
                     if lines:
                         first_line = lines[0]
                         # Clean up any type markers like [HEADING] [PARAGRAPH]
@@ -461,7 +461,7 @@ def _render_docx_sections(
                     # Try to use subheading style, fall back to body style with bold
                     try:
                         para = doc.add_paragraph(content, style=template_dna.subheading_style_name)
-                    except:
+                    except Exception:
                         logger.warning(f"Subheading style '{template_dna.subheading_style_name}' not found, using body style")
                         para = doc.add_paragraph(content, style=template_dna.body_style_name)
                         if para.runs:
@@ -490,7 +490,7 @@ def _render_docx_sections(
                         # Check if style exists without adding paragraph
                         _ = doc.styles[template_dna.bullet_style_name]
                         has_bullet_style = True
-                    except:
+                    except Exception:
                         has_bullet_style = False
                     
                     if has_bullet_style:
