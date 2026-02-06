@@ -5,10 +5,14 @@ on:
     branches: [ "main", "master" ]
     paths:
       - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+      - 'sonar-project.properties'
   pull_request:
     branches: [ "main", "master" ]
     paths:
       - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+      - 'sonar-project.properties'
 
 defaults:
   run:
