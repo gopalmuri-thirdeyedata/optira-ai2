@@ -40,8 +40,18 @@ jobs:
 
     # Note: Adjust if you have actual tests. 
     # If 'npm run test' fails because no tests are found, you might need to add a dummy test.
-    - name: Test
-      run: npm run test
+    - name: Test with coverage
+      run: npm run test:coverage
+
+    - name: SonarCloud Scan
+      uses: sonarsource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      with:
+        args: >
+          -Dsonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info
 
     - name: Build
       run: npm run build
+
