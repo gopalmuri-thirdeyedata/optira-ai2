@@ -46,7 +46,7 @@ jobs:
         pytest --cov=app --cov-report=xml --cov-report=term-missing
         
     - name: SonarCloud Scan
-      uses: sonarsource/sonarcloud-github-action@master
+      uses: sonarsource/sonarcloud-github-action@49e6cd7b36093157aa79af823956e60d51553405
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
