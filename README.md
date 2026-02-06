@@ -6,7 +6,7 @@
 - **Automatic TOC Update**: Detects and updates Table of Contents entries, preserving dot leaders and page formatting.
 - **Cover Page Intelligence**: Identifies the cover page title and updates it to match the new content.
 - **Bullet Point Deduplication**: Advanced logic to prevent duplicate bullet points and ensure clean lists.
-- **Multi-Model Support**: Switch between **Groq** (Llama 3) and **Google Gemini 2.0** for AI processing.
+- **Multi-Model Support**: Switch between **Groq** (Llama 3) for AI processing.
 
 ## 🛠 Tech Stack
 
@@ -70,52 +70,77 @@ graph TD
 
 ## ⚡ Setup & Installation
 
+Follow these steps to get the project running on your local machine.
+
 ### Prerequisites
-- Node.js (v18+)
-- Python (v3.10+)
-- API Key for **Groq** OR **Google Gemini**
+- **Node.js**: v18 or higher
+- **Python**: v3.10 or higher
+- **API Key**: A valid [Groq API Key](https://console.groq.com/) for AI processing.
 
-### 1. Backend Setup
+### 1. Backend Setup (FastAPI)
 
-```bash
-# Navigate to backend
-cd backend
+1.  **Navigate to the backend directory:**
+    ```bash
+    cd backend
+    ```
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+2.  **Create a virtual environment:**
+    ```bash
+    # Windows
+    python -m venv venv
+    venv\Scripts\activate
 
-# Install dependencies
-pip install -r requirements.txt
+    # macOS/Linux
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
 
-# Configure Environment
-cp .env.example .env
-```
+3.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-**Update `.env` with your keys:**
-```ini
-GROQ_API_KEY=your_groq_key_here
-```
+4.  **Configure Environment Variables:**
+    Create a `.env` file in the `backend` directory (or copy the example).
+    ```bash
+    cp .env.example .env
+    ```
+    Open `.env` and add your API key:
+    ```ini
+    GROQ_API_KEY=your_groq_api_key_here
+    # Optional: Set DEBUG=true for detailed logs
+    ```
 
-**Run Server:**
-```bash
-uvicorn app.main:app --reload
-# Server running at http://localhost:8000
-```
+5.  **Start the Server:**
+    ```bash
+    uvicorn app.main:app --reload
+    ```
+    The backend will start at `http://localhost:8000`.
 
-### 2. Frontend Setup
+### 2. Frontend Setup (React + Vite)
 
-```bash
-# Navigate to frontend
-cd frontend
+1.  **Open a new terminal and navigate to the frontend directory:**
+    ```bash
+    cd frontend
+    ```
 
-# Install dependencies
-npm install
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
 
-# Run Development Server
-npm run dev
-# Frontend running at http://localhost:5173
-```
+3.  **Configure Environment Variables:**
+    Ensure you have a `.env` file for the API URL.
+    ```bash
+    # Create .env if it doesn't exist
+    echo "VITE_API_URL=http://localhost:8000" > .env
+    ```
+
+4.  **Start the Development Server:**
+    ```bash
+    npm run dev
+    ```
+    The frontend will launch at `http://localhost:5173`.
 
 ---
 
